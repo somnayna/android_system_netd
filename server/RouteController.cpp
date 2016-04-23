@@ -45,7 +45,11 @@ namespace {
 // BEGIN CONSTANTS --------------------------------------------------------------------------------
 
 const uint32_t RULE_PRIORITY_VPN_OVERRIDE_SYSTEM = 10000;
+
+#ifndef MTK_HARDWARE
 const uint32_t RULE_PRIORITY_VPN_OVERRIDE_OIF    = 10500;
+#endif
+
 const uint32_t RULE_PRIORITY_VPN_OUTPUT_TO_LOCAL = 11000;
 const uint32_t RULE_PRIORITY_SECURE_VPN          = 12000;
 const uint32_t RULE_PRIORITY_EXPLICIT_NETWORK    = 13000;
@@ -547,15 +551,22 @@ WARN_UNUSED_RESULT int modifyExplicitNetworkRule(unsigned netId, uint32_t table,
 //
 // Supports apps that use SO_BINDTODEVICE or IP_PKTINFO options and the kernel that already knows
 // the outgoing interface (typically for link-local communications).
+#ifndef MTK_HARDWARE
 WARN_UNUSED_RESULT int modifyOutputInterfaceRules(const char* interface, uint32_t table,
                                                   Permission permission, uid_t uidStart,
                                                   uid_t uidEnd, bool add) {
+#else
+WARN_UNUSED_RESULT int modifyOutputInterfaceRule(const char* interface, uint32_t table,  
+                                                 Permission permission, uid_t uidStart,  
+                                                 uid_t uidEnd, bool add) {  
+#endif
     Fwmark fwmark;
     Fwmark mask;
 
     fwmark.permission = permission;
     mask.permission = permission;
 
+#ifndef MTK_HARDWARE
     // If this rule does not specify a UID range, then also add a corresponding high-priority rule
     // for UID. This covers forwarded packets and system daemons such as the tethering DHCP server.
     if (uidStart == INVALID_UID && uidEnd == INVALID_UID) {
@@ -565,6 +576,7 @@ WARN_UNUSED_RESULT int modifyOutputInterfaceRules(const char* interface, uint32_
             return ret;
         }
     }
+#endif
 
     return modifyIpRule(add ? RTM_NEWRULE : RTM_DELRULE, RULE_PRIORITY_OUTPUT_INTERFACE, table,
                         fwmark.intValue, mask.intValue, IIF_NONE, interface, uidStart, uidEnd);
@@ -681,9 +693,15 @@ int configureDummyNetwork() {
         return -errno;
     }
 
+#ifndef MTK_HARDWARE
     if ((ret = modifyOutputInterfaceRules(interface, table, PERMISSION_NONE,
                                           INVALID_UID, INVALID_UID, ACTION_ADD))) {
         ALOGE("Can't create oif rules for %s: %s", interface, strerror(-ret));
+#else
+    if ((ret = modifyOutputInterfaceRule(interface, table, PERMISSION_NONE,  
+                                         INVALID_UID, INVALID_UID, ACTION_ADD))) {  
+        ALOGE("Can't create oif rule for %s: %s", interface, strerror(-ret));  
+#endif
         return ret;
     }
 
@@ -729,8 +747,13 @@ WARN_UNUSED_RESULT int modifyLocalNetwork(unsigned netId, const char* interface,
     if (int ret = modifyIncomingPacketMark(netId, interface, PERMISSION_NONE, add)) {
         return ret;
     }
+#ifndef MTK_HARDWARE
     return modifyOutputInterfaceRules(interface, ROUTE_TABLE_LOCAL_NETWORK, PERMISSION_NONE,
                                       INVALID_UID, INVALID_UID, add);
+#else
+    return modifyOutputInterfaceRule(interface, ROUTE_TABLE_LOCAL_NETWORK, PERMISSION_NONE,  
+                                     INVALID_UID, INVALID_UID, add);  
+#endif
 }
 
 WARN_UNUSED_RESULT int modifyPhysicalNetwork(unsigned netId, const char* interface,
@@ -747,10 +770,17 @@ WARN_UNUSED_RESULT int modifyPhysicalNetwork(unsigned netId, const char* interfa
                                             add)) {
         return ret;
     }
+#ifndef MTK_HARDWARE
     if (int ret = modifyOutputInterfaceRules(interface, table, permission, INVALID_UID, INVALID_UID,
                                             add)) {
         return ret;
     }
+#else
+    if (int ret = modifyOutputInterfaceRule(interface, table, permission, INVALID_UID, INVALID_UID, 
+                                            add)) {
+        return ret;
+    }
+#endif
     return modifyImplicitNetworkRule(netId, table, permission, add);
 }
 
@@ -770,10 +800,17 @@ WARN_UNUSED_RESULT int modifyVirtualNetwork(unsigned netId, const char* interfac
                                                 range.second, add)) {
             return ret;
         }
+#ifndef MTK_HARDWARE
         if (int ret = modifyOutputInterfaceRules(interface, table, PERMISSION_NONE, range.first,
                                                  range.second, add)) {
             return ret;
         }
+#else
+        if (int ret = modifyOutputInterfaceRule(interface, table, PERMISSION_NONE, range.first,  
+                                                range.second, add)) {  
+            return ret;
+        }
+#endif
     }
 
     if (modifyNonUidBasedRules) {
