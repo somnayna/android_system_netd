@@ -555,18 +555,12 @@ WARN_UNUSED_RESULT int modifyExplicitNetworkRule(unsigned netId, uint32_t table,
 WARN_UNUSED_RESULT int modifyOutputInterfaceRules(const char* interface, uint32_t table,
                                                   Permission permission, uid_t uidStart,
                                                   uid_t uidEnd, bool add) {
-#else
-WARN_UNUSED_RESULT int modifyOutputInterfaceRule(const char* interface, uint32_t table,  
-                                                 Permission permission, uid_t uidStart,  
-                                                 uid_t uidEnd, bool add) {  
-#endif
     Fwmark fwmark;
     Fwmark mask;
 
     fwmark.permission = permission;
     mask.permission = permission;
 
-#ifndef MTK_HARDWARE
     // If this rule does not specify a UID range, then also add a corresponding high-priority rule
     // for UID. This covers forwarded packets and system daemons such as the tethering DHCP server.
     if (uidStart == INVALID_UID && uidEnd == INVALID_UID) {
@@ -576,12 +570,25 @@ WARN_UNUSED_RESULT int modifyOutputInterfaceRule(const char* interface, uint32_t
             return ret;
         }
     }
-#endif
 
     return modifyIpRule(add ? RTM_NEWRULE : RTM_DELRULE, RULE_PRIORITY_OUTPUT_INTERFACE, table,
                         fwmark.intValue, mask.intValue, IIF_NONE, interface, uidStart, uidEnd);
 }
 
+#else
+WARN_UNUSED_RESULT int modifyOutputInterfaceRule(const char* interface, uint32_t table,  
+                                                 Permission permission, uid_t uidStart,  
+                                                 uid_t uidEnd, bool add) {  
+    Fwmark fwmark;
+    Fwmark mask;
+
+    fwmark.permission = permission;
+    mask.permission = permission;
+
+    return modifyIpRule(add ? RTM_NEWRULE : RTM_DELRULE, RULE_PRIORITY_OUTPUT_INTERFACE, table,
+                        fwmark.intValue, mask.intValue, IIF_NONE, interface, uidStart, uidEnd);
+}
+#endif
 // A rule to route traffic based on the chosen network.
 //
 // This is for sockets that have not explicitly requested a particular network, but have been
@@ -697,13 +704,15 @@ int configureDummyNetwork() {
     if ((ret = modifyOutputInterfaceRules(interface, table, PERMISSION_NONE,
                                           INVALID_UID, INVALID_UID, ACTION_ADD))) {
         ALOGE("Can't create oif rules for %s: %s", interface, strerror(-ret));
+        return ret;
+    }
 #else
     if ((ret = modifyOutputInterfaceRule(interface, table, PERMISSION_NONE,  
                                          INVALID_UID, INVALID_UID, ACTION_ADD))) {  
         ALOGE("Can't create oif rule for %s: %s", interface, strerror(-ret));  
-#endif
         return ret;
     }
+#endif
 
     if ((ret = modifyIpRoute(RTM_NEWROUTE, table, interface, "0.0.0.0/0", NULL))) {
         ALOGE("Can't add IPv4 default route to %s: %s", interface, strerror(-ret));
